@@ -1,0 +1,42 @@
+import { ApolloServer } from '@apollo/server';
+import { startServerAndCreateNextHandler } from '@as-integrations/next';
+import { NextRequest } from 'next/server';
+import dbConnect from '@/lib/dbConnect';
+import Ticket, { ITicket } from '@/models/Ticket';
+
+const typeDefs = `#graphql
+  type Ticket {
+    _id: ID!
+    Ticket: String
+    Status: String
+    Priority: String
+    Created: String
+    SnapshotDate: String
+  }
+
+  type Query {
+    tickets(status: [String], priority: [String]): [Ticket]
+  }
+`;
+
+const resolvers = {
+  Query: {
+    tickets: async (_: any, args: { status?: string[], priority?: string[] }): Promise<ITicket[]> => {
+      await dbConnect();
+      const filter: any = {};
+      if (args.status?.length) filter.Status = { $in: args.status };
+      if (args.priority?.length) filter.Priority = { $in: args.priority };
+
+      return await Ticket.aggregate([
+        { $sort: { SnapshotDate: -1 } },
+        { $group: { _id: "$Ticket", latest: { $first: "$$ROOT" } } },
+        { $replaceRoot: { newRoot: "$latest" } },
+        { $match: filter }
+      ]);
+    },
+  },
+};
+
+const server = new ApolloServer({ typeDefs, resolvers });
+const handler = startServerAndCreateNextHandler<NextRequest>(server);
+export { handler as GET, handler as POST };

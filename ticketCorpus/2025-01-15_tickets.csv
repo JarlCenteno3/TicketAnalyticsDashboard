@@ -1,0 +1,6 @@
+Ticket,Status,Priority,Description,Created,Properties,Organization,Assigned,Tags,SnapshotDate
+T001,CREATED,P1: Urgent. No workaround.,Dashboard loading issue,13-Jan-25,Backlog,Acme Corp,John Doe,Bug,2025-01-15
+T002,IN PROGRESS,P2: Urgent. Workaround available.,API response slow,12-Jan-25,Escalated to Dev,Beta Inc,Jane Smith,Performance,2025-01-15
+T003,COMPLETED,P0: Emergency,Critical security vulnerability,10-Jan-25,Escalated to Enterprise,Acme Corp,Admin User,Security,2025-01-15
+T004,ACKNOWLEDGED,P3: Normal.,Feature request for export,14-Jan-25,Backlog,Tech Onboarding,Bob Wilson,Feature Request,2025-01-15
+T005,WAITING FOR CONFIRMATION,P2: Urgent. Workaround available.,User cannot reset password,11-Jan-25,Escalated to Service Managers,Beta Inc,Support Team,Access,2025-01-15

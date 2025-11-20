@@ -1,0 +1,4 @@
+Ticket,Created,Status,Priority,Properties,Assigned,Organization,Description
+T101,01-Jul-25,IN PROGRESS,P1: Urgent. No workaround.,,DevTeamX,Org A,"Database connection pool is exhausting frequently"
+T103,15-Jul-25,COMPLETED,P2: Urgent. Workaround available.,,TechTeamB,Org C,"Login page is slow to load"
+T104,10-Aug-25,ACKNOWLEDGED,P3: Normal.,Backlog,SupportTeamA,Org A,"UI text has a typo on the settings page"

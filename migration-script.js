@@ -1,0 +1,67 @@
+const mongoose = require('mongoose');
+const fs = require('fs');
+const path = require('path');
+const { parse } = require('csv-parse');
+const glob = require('glob');
+
+// --- Configuration ---
+const MONGO_URI = 'mongodb://localhost:27017';
+const DB_NAME = 'ticketing_analytics';
+const COLLECTION_NAME = 'tickets';
+const TICKET_CORPUS_PATH = './ticketCorpus';
+// ---------------------
+
+const ticketSchema = new mongoose.Schema({
+    Ticket: String,
+    Status: String,
+    Priority: String,
+    Created: Date,
+    SnapshotDate: Date,
+}, { strict: false });
+
+const Ticket = mongoose.model('Ticket', ticketSchema, COLLECTION_NAME);
+
+function parseCustomDate(dateStr) {
+    if (!dateStr || typeof dateStr !== 'string' || dateStr.toLowerCase() === 'nan') return null;
+    const monthMap = { 'jan': 0, 'feb': 1, 'mar': 2, 'apr': 3, 'may': 4, 'jun': 5, 'jul': 6, 'aug': 7, 'sep': 8, 'oct': 9, 'nov': 10, 'dec': 11 };
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return null;
+    const day = parseInt(parts[0], 10);
+    const month = monthMap[parts[1].toLowerCase()];
+    const year = parseInt(parts[2], 10) + 2000;
+    if (isNaN(day) || month === undefined || isNaN(year)) return null;
+    return new Date(Date.UTC(year, month, day));
+}
+
+async function migrate() {
+    try {
+        await mongoose.connect(MONGO_URI, { dbName: DB_NAME });
+        console.log('Connected to MongoDB.');
+        await mongoose.connection.db.collection(COLLECTION_NAME).drop().catch(err => {
+            if (err.codeName !== 'NamespaceNotFound') throw err;
+        });
+        console.log('Dropped existing collection.');
+
+        const csvFiles = glob.sync(path.join(TICKET_CORPUS_PATH, '*.csv'));
+        console.log(`Found ${csvFiles.length} CSV files.`);
+
+        for (const file of csvFiles) {
+            const basename = path.basename(file);
+            const snapshotDate = new Date(basename.split('_')[0]);
+            const parser = fs.createReadStream(file).pipe(parse({ columns: true, trim: true, skip_empty_lines: true }));
+            const documents = [];
+            for await (const record of parser) {
+                documents.push({ ...record, Created: parseCustomDate(record.Created), SnapshotDate: snapshotDate });
+            }
+            if (documents.length > 0) {
+                await Ticket.insertMany(documents);
+                console.log(`Inserted ${documents.length} documents from ${basename}.`);
+            }
+        }
+        console.log('\nMigration completed!');
+    } finally {
+        await mongoose.connection.close();
+    }
+}
+
+migrate().catch(console.error);

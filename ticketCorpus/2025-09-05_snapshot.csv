@@ -1,0 +1,3 @@
+Ticket,Created,Status,Priority,Properties,Assigned,Organization,Description
+T004,01-Sep-25,CREATED,P2: Urgent. Workaround available.,,TechTeamA,Org C,"Server is slow during peak hours"
+T005,01-Sep-25,CANCELLED,P3: Normal.,,SupportTeamB,Org D,"User cannot find the print button"

@@ -1,0 +1,3 @@
+Ticket,Created,Status,Priority,Properties,Assigned,Organization,Description
+T101,01-Jul-25,CREATED,P1: Urgent. No workaround.,,DevTeamX,Org A,"Database connection pool is exhausting frequently"
+T102,01-Jul-25,CREATED,P3: Normal.,,SupportTeamA,Org B,"User needs access to shared folder"

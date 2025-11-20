@@ -1,0 +1,5 @@
+Ticket,Created,Status,Priority,Properties,Assigned,Organization,Description
+T001,01-Nov-25,CREATED,P3: Normal.,,SupportTeamA,Org A,"Password reset request"
+T002,01-Nov-25,CREATED,P2: Urgent. Workaround available.,,SupportTeamA,Org A,"Dashboard is not loading correctly"
+T003,15-Oct-25,IN PROGRESS,P1: Urgent. No workaround.,Escalated to Dev,DevTeamX,Org B,"Critical API endpoint is failing"
+T004,01-Sep-25,ACKNOWLEDGED,P2: Urgent. Workaround available.,,TechTeamA,Org C,"Server is slow during peak hours"
