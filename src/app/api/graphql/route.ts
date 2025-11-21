@@ -2,8 +2,8 @@ import { ApolloServer } from '@apollo/server';
 import { startServerAndCreateNextHandler } from '@as-integrations/next';
 import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin/landingPage/default';
 import { NextRequest } from 'next/server';
-import dbConnect from '@/lib/dbConnect';
-import Ticket, { ITicket } from '@/models/Ticket';
+import dbConnect from '../../../lib/dbConnect';
+import Ticket, { ITicket } from '../../../models/Ticket';
 
 const typeDefs = `#graphql
   type Ticket {
@@ -12,6 +12,7 @@ const typeDefs = `#graphql
     Status: String
     Priority: String
     Created: String
+    Description: String
     SnapshotDate: String
   }
 
