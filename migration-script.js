@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');
 const { parse } = require('csv-parse');
-const glob = require('glob');
+
 
 // --- Configuration ---
 const MONGO_URI = 'mongodb://localhost:27017';
@@ -11,6 +11,12 @@ const COLLECTION_NAME = 'tickets';
 // Use path.join with __dirname to make the path absolute and reliable
 const TICKET_CORPUS_PATH = path.join(__dirname, 'ticketCorpus');
 // ---------------------
+
+console.log(`Debug Info:`);
+console.log(`  - __dirname: ${__dirname}`);
+console.log(`  - Current Dir: ${process.cwd()}`);
+console.log(`  - Corpus Path: ${TICKET_CORPUS_PATH}`);
+console.log(`------------------------------------`);
 
 const ticketSchema = new mongoose.Schema({
     Ticket: String,
@@ -43,18 +49,28 @@ async function migrate() {
         });
         console.log('Dropped existing collection.');
 
-        const csvFiles = glob.sync(path.join(TICKET_CORPUS_PATH, '*.csv'));
+        console.log(`Searching for CSV files in: ${TICKET_CORPUS_PATH}`);
+        const allFiles = fs.readdirSync(TICKET_CORPUS_PATH);
+        console.log('--- All files found in directory ---');
+        console.log(allFiles);
+        console.log('------------------------------------');
+        const csvFiles = allFiles.filter(file => path.extname(file).toLowerCase() === '.csv').map(file => path.join(TICKET_CORPUS_PATH, file));
         console.log(`Found ${csvFiles.length} CSV files.`);
 
         for (const file of csvFiles) {
             const basename = path.basename(file);
-            let snapshotDate = new Date(basename.split('_')[0]);
+            const dateMatch = basename.match(/(\d{4}-\d{2}-\d{2})/);
+            let snapshotDate;
 
-            // If the date from the filename is invalid, use the file's modification date as a fallback.
-            if (isNaN(snapshotDate.getTime())) {
+            if (dateMatch) {
+                snapshotDate = new Date(dateMatch[1]);
+            }
+
+            // If the date from the filename is invalid or not found, use the file's modification date as a fallback.
+            if (!snapshotDate || isNaN(snapshotDate.getTime())) {
                 const stats = fs.statSync(file);
                 snapshotDate = stats.mtime;
-                console.warn(`\n[!] Invalid date in filename for "${basename}". Using file modification date as SnapshotDate: ${snapshotDate.toISOString()}`);
+                console.warn(`\n[!] Could not parse date from filename for "${basename}". Using file modification date as SnapshotDate: ${snapshotDate.toISOString()}`);
             }
 
             console.log(`\nProcessing ${basename} with SnapshotDate: ${snapshotDate.toISOString()}`);

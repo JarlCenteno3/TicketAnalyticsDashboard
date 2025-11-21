@@ -29,12 +29,16 @@ const resolvers = {
       if (args.status?.length) filter.Status = { $in: args.status };
       if (args.priority?.length) filter.Priority = { $in: args.priority };
 
-      return await Ticket.aggregate([
+      const tickets = await Ticket.aggregate([
         { $sort: { SnapshotDate: -1 } },
         { $group: { _id: "$Ticket", latest: { $first: "$$ROOT" } } },
         { $replaceRoot: { newRoot: "$latest" } },
         { $match: filter }
       ]);
+      
+      console.log(`[API] Found ${tickets.length} tickets from database.`);
+
+      return tickets;
     },
   },
 };

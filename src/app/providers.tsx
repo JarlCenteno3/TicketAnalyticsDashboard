@@ -1,12 +1,17 @@
 "use client";
 
-import { ApolloClient, InMemoryCache, ApolloProvider } from '@apollo/client';
+import { ApolloClient, InMemoryCache, ApolloProvider, HttpLink } from '@apollo/client';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 
+// Create an HttpLink to connect to the GraphQL API
+const httpLink = new HttpLink({
+  uri: '/api/graphql',
+});
+
 // Set up the Apollo Client to connect to our GraphQL API
 const client = new ApolloClient({
-    uri: '/api/graphql',
+    link: httpLink,
     cache: new InMemoryCache(),
 });
 

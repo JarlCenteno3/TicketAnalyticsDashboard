@@ -16,7 +16,10 @@ async function dbConnect() {
   if (cached.conn) return cached.conn;
 
   if (!cached.promise) {
-    cached.promise = mongoose.connect(MONGODB_URI!, { bufferCommands: false }).then((mongoose) => {
+    cached.promise = mongoose.connect(MONGODB_URI!, { 
+      bufferCommands: false,
+      dbName: 'ticketing_analytics' 
+    }).then((mongoose) => {
       return mongoose;
     });
   }
