@@ -8,7 +8,8 @@ const glob = require('glob');
 const MONGO_URI = 'mongodb://localhost:27017';
 const DB_NAME = 'ticketing_analytics';
 const COLLECTION_NAME = 'tickets';
-const TICKET_CORPUS_PATH = './ticketCorpus';
+// Use path.join with __dirname to make the path absolute and reliable
+const TICKET_CORPUS_PATH = path.join(__dirname, 'ticketCorpus');
 // ---------------------
 
 const ticketSchema = new mongoose.Schema({
@@ -47,7 +48,17 @@ async function migrate() {
 
         for (const file of csvFiles) {
             const basename = path.basename(file);
-            const snapshotDate = new Date(basename.split('_')[0]);
+            let snapshotDate = new Date(basename.split('_')[0]);
+
+            // If the date from the filename is invalid, use the file's modification date as a fallback.
+            if (isNaN(snapshotDate.getTime())) {
+                const stats = fs.statSync(file);
+                snapshotDate = stats.mtime;
+                console.warn(`\n[!] Invalid date in filename for "${basename}". Using file modification date as SnapshotDate: ${snapshotDate.toISOString()}`);
+            }
+
+            console.log(`\nProcessing ${basename} with SnapshotDate: ${snapshotDate.toISOString()}`);
+
             const parser = fs.createReadStream(file).pipe(parse({ columns: true, trim: true, skip_empty_lines: true }));
             const documents = [];
             for await (const record of parser) {

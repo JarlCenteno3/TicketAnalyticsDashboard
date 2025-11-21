@@ -1,5 +1,6 @@
 import { ApolloServer } from '@apollo/server';
 import { startServerAndCreateNextHandler } from '@as-integrations/next';
+import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin/landingPage/default';
 import { NextRequest } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
 import Ticket, { ITicket } from '@/models/Ticket';
@@ -37,6 +38,12 @@ const resolvers = {
   },
 };
 
-const server = new ApolloServer({ typeDefs, resolvers });
+const server = new ApolloServer({
+  typeDefs,
+  resolvers,
+  // This plugin enables the Apollo Sandbox for local development.
+  plugins: [ApolloServerPluginLandingPageLocalDefault()],
+});
+
 const handler = startServerAndCreateNextHandler<NextRequest>(server);
 export { handler as GET, handler as POST };
