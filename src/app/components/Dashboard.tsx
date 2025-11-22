@@ -12,7 +12,6 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  TextField,
   Paper,
   Grid,
   Table,
@@ -30,7 +29,6 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import dynamic from 'next/dynamic';
 
-// Dynamic import for Plotly to avoid SSR issues
 const Plot = dynamic(() => import('react-plotly.js'), { ssr: false });
 const WordCloud = dynamic(() => import('react-wordcloud'), { ssr: false });
 
@@ -43,6 +41,9 @@ const GET_TICKETS = gql`
       Priority
       Created
       Description
+      Assigned
+      Organization
+      SnapshotDate
     }
   }
 `;
@@ -56,6 +57,11 @@ const PRIORITY_BUTTONS = [
   "P0: Emergency", "P1: Urgent. No workaround.",
   "P2: Urgent. Workaround available.", "P3: Normal."
 ];
+
+// Key fixes for word frequency:
+// 1. Added common words from your data to stopWords
+// 2. Improved regex pattern
+// 3. Better word cloud configuration
 
 const stopWords = new Set([
   "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", 
@@ -77,20 +83,20 @@ const stopWords = new Set([
   "weren't", "what", "what's", "when", "when's", "where", "where's", "which", 
   "while", "who", "who's", "whom", "why", "why's", "with", "won't", "would", 
   "wouldn't", "you", "you'd", "you'll", "you're", "you've", "your", "yours", 
-  "yourself", "yourselves", "ticket", "description", "issue", "error", "please", "see"
+  "yourself", "yourselves", "ticket", "description", "issue", "error", "please", 
+  "see", "login", "failure", "timeout", "observed"  // FIX: Added common words from your data
 ]);
 
 type ViewMode = 'pie' | 'line' | 'wordcloud' | 'workload' | 'performance' | null;
 
 const useIsClient = () => {
   const [isClient, setIsClient] = useState(false);
-
   useEffect(() => {
     setIsClient(true);
   }, []);
-
   return isClient;
 };
+
 export default function Dashboard() {
   const [selectedStatus, setSelectedStatus] = useState<string[]>([]);
   const [selectedPriority, setSelectedPriority] = useState<string[]>([]);
@@ -98,9 +104,8 @@ export default function Dashboard() {
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(null);
   const [pieColumn, setPieColumn] = useState<string>('');
-  const [size, setSize] = useState<[number, number] | null>(null);
+  const [size, setSize] = useState<[number, number]>([800, 600]);
   const wordCloudContainerRef = useRef<HTMLDivElement>(null);
-
 
   const isClient = useIsClient();
 
@@ -113,17 +118,13 @@ export default function Dashboard() {
 
   const tickets = data?.tickets || [];
 
-  // Filter by date if needed
   const filteredTickets = tickets.filter((ticket: any) => {
     const hasDateFilter = startDate || endDate;
-    if (!hasDateFilter) return true; // No date filter, show all
-
-    if (!ticket.Created) return false; // Date filter is on, but no date, so hide
+    if (!hasDateFilter) return true;
+    if (!ticket.Created) return false;
 
     const ticketDate = new Date(ticket.Created);
-    if (isNaN(ticketDate.getTime())) {
-      return false; // Date filter is on, but invalid date, so hide
-    }
+    if (isNaN(ticketDate.getTime())) return false;
 
     if (startDate && ticketDate < startDate) return false;
     if (endDate && ticketDate > endDate) return false;
@@ -131,28 +132,24 @@ export default function Dashboard() {
     return true;
   });
 
-useEffect(() => {
-    if (wordCloudContainerRef.current) {
+  useEffect(() => {
+    if (wordCloudContainerRef.current && viewMode === 'wordcloud') {
       const { clientWidth, clientHeight } = wordCloudContainerRef.current;
-      // Only set size if it's different to avoid re-renders
-      if (!size || size[0] !== clientWidth || size[1] !== clientHeight)
-      setSize([clientWidth, clientHeight]);
+      if (clientWidth > 0 && clientHeight > 0) {
+        setSize([clientWidth, clientHeight - 80]);
+      }
     }
-  }, [wordCloudContainerRef.current, viewMode, filteredTickets, size]); // Re-check on data/view changes
+  }, [viewMode]);
 
   const handleStatusToggle = (status: string) => {
     setSelectedStatus(prev =>
-      prev.includes(status)
-        ? prev.filter(s => s !== status)
-        : [...prev, status]
+      prev.includes(status) ? prev.filter(s => s !== status) : [...prev, status]
     );
   };
 
   const handlePriorityToggle = (priority: string) => {
     setSelectedPriority(prev =>
-      prev.includes(priority)
-        ? prev.filter(p => p !== priority)
-        : [...prev, priority]
+      prev.includes(priority) ? prev.filter(p => p !== priority) : [...prev, priority]
     );
   };
 
@@ -190,44 +187,31 @@ useEffect(() => {
 
     const counts: Record<string, number> = {};
     filteredTickets.forEach((ticket: any) => {
-      // 1. Check if ticket.Created actually exists
       if (!ticket.Created) return;
-
       const dateObj = new Date(ticket.Created);
-
-      // 2. Check if the date object is valid
-      if (isNaN(dateObj.getTime())) {
-        console.warn("Found a ticket with a bad date:", ticket);
-        return; // Skip this ticket
-      }
-
-      // 3. Safe to format now
+      if (isNaN(dateObj.getTime())) return;
       const date = format(dateObj, 'MMM dd, yyyy');
-      
       counts[date] = (counts[date] || 0) + 1;
     });
 
-    const sortedDates = Object.keys(counts).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
-    const trace = {
-      type: 'scatter' as const,
-      mode: 'lines+markers' as const,
-      x: sortedDates,
-      y: sortedDates.map(date => counts[date]),
-    };
+    const sortedDates = Object.keys(counts).sort((a, b) => 
+      new Date(a).getTime() - new Date(b).getTime()
+    );
 
     return {
-      data: [trace],
+      data: [{
+        type: 'scatter' as const,
+        mode: 'lines+markers' as const,
+        x: sortedDates,
+        y: sortedDates.map(date => counts[date]),
+      }],
       layout: {
         title: 'Ticket Creation Trends',
         paper_bgcolor: '#1e1e1e',
         plot_bgcolor: '#1e1e1e',
         font: { color: '#ffffff' },
-        xaxis: {
-          title: 'Date',
-        },
-        yaxis: {
-          title: 'Number of Tickets',
-        },
+        xaxis: { title: 'Date' },
+        yaxis: { title: 'Number of Tickets' },
       },
     };
   }, [filteredTickets]);
@@ -238,28 +222,133 @@ useEffect(() => {
     const wordCounts: Record<string, number> = {};
     filteredTickets.forEach((ticket: any) => {
       if (!ticket.Description) return;
-
-      const words = ticket.Description.toLowerCase().match(/\b(\w+)\b/g) || [];
+      const words = ticket.Description.toLowerCase().match(/\b[a-z]{3,}\b/g) || [];
       words.forEach((word: string) => {
-        if (!stopWords.has(word) && word.length > 2) {
+        if (!stopWords.has(word)) {
           wordCounts[word] = (wordCounts[word] || 0) + 1;
         }
       });
     });
 
-    const sortedWords = Object.entries(wordCounts)
-      .map(([text, value]) => ({ text, value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 100); // Take top 100 words
+    return Object.entries(wordCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 100)
+      .map(([text, value]) => ({ text, value }));
+  }, [filteredTickets]);
 
-    // Make the top 5 words larger to make them stand out
-    return sortedWords.map((word, index) => {
-      if (index < 5) {
-        return { ...word, value: word.value * 5 }; // Inflate value for font size
-      }
-      return word;
+  const workloadData = useMemo(() => {
+    if (filteredTickets.length === 0) return null;
+
+    const agentWorkload: Record<string, Record<string, number>> = {};
+    const allStatuses = new Set<string>();
+
+    filteredTickets.forEach((ticket: any) => {
+      if (!ticket.Assigned) return;
+      
+      const agents = ticket.Assigned.split(';').map((a: string) => a.trim());
+      agents.forEach((agent: string) => {
+        if (!agent) return;
+        
+        if (!agentWorkload[agent]) {
+          agentWorkload[agent] = {};
+        }
+        
+        const status = ticket.Status || 'Unknown';
+        allStatuses.add(status);
+        agentWorkload[agent][status] = (agentWorkload[agent][status] || 0) + 1;
+      });
     });
 
+    const sortedAgents = Object.keys(agentWorkload).sort();
+    const sortedStatuses = Array.from(allStatuses).sort();
+
+    const z = sortedAgents.map(agent => 
+      sortedStatuses.map(status => agentWorkload[agent][status] || 0)
+    );
+
+    return {
+      chartData: {
+        data: [{
+          type: 'heatmap' as const,
+          x: sortedStatuses,
+          y: sortedAgents,
+          z: z,
+          colorscale: 'Viridis',
+        }],
+        layout: {
+          title: 'Agent Workload by Ticket Status',
+          paper_bgcolor: '#1e1e1e',
+          plot_bgcolor: '#1e1e1e',
+          font: { color: '#ffffff' },
+          xaxis: { title: 'Status' },
+          yaxis: { title: 'Agent' },
+        },
+      }
+    };
+  }, [filteredTickets]);
+
+  const performanceData = useMemo(() => {
+    if (filteredTickets.length === 0) return null;
+
+    const statusCounts: Record<string, number> = {};
+    const priorityCounts: Record<string, number> = {};
+    const orgCounts: Record<string, number> = {};
+    
+    let totalResolutionTime = 0;
+    let resolvedCount = 0;
+
+    filteredTickets.forEach((ticket: any) => {
+      statusCounts[ticket.Status] = (statusCounts[ticket.Status] || 0) + 1;
+      priorityCounts[ticket.Priority] = (priorityCounts[ticket.Priority] || 0) + 1;
+      
+      if (ticket.Organization) {
+        orgCounts[ticket.Organization] = (orgCounts[ticket.Organization] || 0) + 1;
+      }
+
+      if (ticket.Status === 'COMPLETED' && ticket.Created && ticket.SnapshotDate) {
+        const created = new Date(ticket.Created);
+        const completed = new Date(ticket.SnapshotDate);
+        if (!isNaN(created.getTime()) && !isNaN(completed.getTime())) {
+          const daysToResolve = (completed.getTime() - created.getTime()) / (1000 * 60 * 60 * 24);
+          totalResolutionTime += daysToResolve;
+          resolvedCount++;
+        }
+      }
+    });
+
+    const avgResolutionTime = resolvedCount > 0 ? (totalResolutionTime / resolvedCount).toFixed(1) : 'N/A';
+    const completionRate = ((statusCounts['COMPLETED'] || 0) / filteredTickets.length * 100).toFixed(1);
+
+    return {
+      totalTickets: filteredTickets.length,
+      avgResolutionTime,
+      completionRate,
+      statusCounts,
+      priorityCounts,
+      orgCounts,
+      chartData: {
+        data: [{
+          type: 'bar' as const,
+          x: Object.keys(statusCounts),
+          y: Object.values(statusCounts),
+          marker: {
+            color: Object.keys(statusCounts).map(status => 
+              status === 'COMPLETED' ? '#4caf50' : 
+              status === 'IN PROGRESS' ? '#2196f3' : 
+              status === 'CREATED' ? '#ff9800' : '#9e9e9e'
+            )
+          },
+        }],
+        layout: {
+          title: 'Tickets by Status',
+          paper_bgcolor: '#1e1e1e',
+          plot_bgcolor: '#1e1e1e',
+          font: { color: '#ffffff' },
+          xaxis: { title: 'Status', tickangle: -45 },
+          yaxis: { title: 'Count' },
+        },
+      }
+    };
   }, [filteredTickets]);
 
   return (
@@ -269,10 +358,8 @@ useEffect(() => {
           Ticket Analytics Dashboard
         </Typography>
 
-        {/* Filter Section */}
         <Paper sx={{ p: 3, mb: 3, bgcolor: '#2a2a2a' }}>
           <Grid container spacing={3}>
-            {/* Status Filters */}
             <Grid item xs={12} md={6}>
               <Typography variant="h6" gutterBottom>Status</Typography>
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
@@ -289,7 +376,6 @@ useEffect(() => {
               </Box>
             </Grid>
 
-            {/* Priority Filters */}
             <Grid item xs={12} md={6}>
               <Typography variant="h6" gutterBottom>Priority</Typography>
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
@@ -306,7 +392,6 @@ useEffect(() => {
               </Box>
             </Grid>
 
-            {/* Date Range */}
             <Grid item xs={12} md={6}>
               <DatePicker
                 label="Start Date"
@@ -326,7 +411,6 @@ useEffect(() => {
           </Grid>
         </Paper>
 
-        {/* View Mode Buttons */}
         <Box sx={{ mb: 3 }}>
           <ButtonGroup variant="contained">
             <Button
@@ -362,7 +446,6 @@ useEffect(() => {
           </ButtonGroup>
         </Box>
 
-        {/* Pie Chart Controls */}
         {viewMode === 'pie' && (
           <Paper sx={{ p: 2, mb: 3, bgcolor: '#2a2a2a' }}>
             <FormControl fullWidth>
@@ -373,12 +456,12 @@ useEffect(() => {
               >
                 <MenuItem value="Status">Status</MenuItem>
                 <MenuItem value="Priority">Priority</MenuItem>
+                <MenuItem value="Organization">Organization</MenuItem>
               </Select>
             </FormControl>
           </Paper>
         )}
 
-        {/* Chart Display */}
         {loading && <CircularProgress />}
         {error && <Typography color="error">Error: {error.message}</Typography>}
         
@@ -405,35 +488,118 @@ useEffect(() => {
         )}
 
         {isClient && viewMode === 'wordcloud' && (
-            <Paper ref={wordCloudContainerRef} sx={{ p: 2, bgcolor: '#2a2a2a', height: '600px', width: '100%' }}>
-              <Typography variant="h6" gutterBottom align="center">
-                Most Frequent Words in Descriptions
-              </Typography>
-              {size ? (
-                  wordCloudData.length > 0 ? (
-                    <WordCloud
-                      words={wordCloudData}
-                      size={size}
-                      options={{
-                        fontFamily: 'impact',
-                        fontSizes: [15, 100],
-                        rotations: 2,
-                        rotationAngles: [0, 90],
-                        colors: ["#2196f3", "#f44336", "#4caf50", "#ff9800", "#9c27b0", "#00bcd4"],
-                        enableTooltip: true,
-                      }}
-                    />
-                  ) : (
-                    <Typography align="center">No description data available for the word cloud.</Typography>
-                  )
-                
-              ) : ( 
-                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}><CircularProgress /></Box>
-              )}
-            </Paper>
-          )}
+          <Paper ref={wordCloudContainerRef} sx={{ p: 2, bgcolor: '#2a2a2a', height: '600px', width: '100%' }}>
+            <Typography variant="h6" gutterBottom align="center">
+              Most Frequent Words in Descriptions
+            </Typography>
+            {wordCloudData.length > 0 ? (
+              <Box sx={{ width: '100%', height: 'calc(100% - 60px)' }}>
+                <WordCloud
+                  words={wordCloudData}
+                  options={{
+                    fontFamily: 'impact',
+                    fontSizes: [20, 80],
+                    rotations: 2,
+                    rotationAngles: [0, 90],
+                    colors: ["#2196f3", "#f44336", "#4caf50", "#ff9800", "#9c27b0", "#00bcd4"],
+                    enableTooltip: true,
+                    deterministic: true,
+                    scale: 'sqrt',
+                  }}
+                />
+              </Box>
+            ) : (
+              <Typography align="center">No description data available.</Typography>
+            )}
+          </Paper>
+        )}
 
-        {/* Table Display */}
+        {viewMode === 'workload' && workloadData && (
+          <Paper sx={{ p: 2, mb: 3, bgcolor: '#2a2a2a' }}>
+            <Plot
+              data={workloadData.chartData.data}
+              layout={workloadData.chartData.layout}
+              style={{ width: '100%', height: '800px' }}
+              config={{ responsive: true }}
+            />
+          </Paper>
+        )}
+
+        {viewMode === 'performance' && performanceData && (
+          <Box>
+            <Grid container spacing={3} sx={{ mb: 3 }}>
+              <Grid item xs={12} md={4}>
+                <Paper sx={{ p: 3, bgcolor: '#2a2a2a', textAlign: 'center' }}>
+                  <Typography variant="h4" color="primary">{performanceData.totalTickets}</Typography>
+                  <Typography variant="body1">Total Tickets</Typography>
+                </Paper>
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <Paper sx={{ p: 3, bgcolor: '#2a2a2a', textAlign: 'center' }}>
+                  <Typography variant="h4" color="success.main">
+                    {performanceData.avgResolutionTime} days
+                  </Typography>
+                  <Typography variant="body1">Avg Resolution Time</Typography>
+                </Paper>
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <Paper sx={{ p: 3, bgcolor: '#2a2a2a', textAlign: 'center' }}>
+                  <Typography variant="h4" color="warning.main">
+                    {performanceData.completionRate}%
+                  </Typography>
+                  <Typography variant="body1">Completion Rate</Typography>
+                </Paper>
+              </Grid>
+            </Grid>
+
+            <Paper sx={{ p: 2, mb: 3, bgcolor: '#2a2a2a' }}>
+              <Plot
+                data={performanceData.chartData.data}
+                layout={performanceData.chartData.layout}
+                style={{ width: '100%', height: '500px' }}
+                config={{ responsive: true }}
+              />
+            </Paper>
+
+            <Grid container spacing={3}>
+              <Grid item xs={12} md={6}>
+                <Paper sx={{ p: 3, bgcolor: '#2a2a2a' }}>
+                  <Typography variant="h6" gutterBottom>Tickets by Organization</Typography>
+                  <Table size="small">
+                    <TableBody>
+                      {Object.entries(performanceData.orgCounts)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([org, count]) => (
+                          <TableRow key={org}>
+                            <TableCell>{org}</TableCell>
+                            <TableCell align="right">{count}</TableCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </Table>
+                </Paper>
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <Paper sx={{ p: 3, bgcolor: '#2a2a2a' }}>
+                  <Typography variant="h6" gutterBottom>Tickets by Priority</Typography>
+                  <Table size="small">
+                    <TableBody>
+                      {Object.entries(performanceData.priorityCounts)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([priority, count]) => (
+                          <TableRow key={priority}>
+                            <TableCell>{priority}</TableCell>
+                            <TableCell align="right">{count}</TableCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </Table>
+                </Paper>
+              </Grid>
+            </Grid>
+          </Box>
+        )}
+
         <Paper sx={{ mt: 3, bgcolor: '#2a2a2a' }}>
           <TableContainer>
             <Table>
@@ -443,6 +609,7 @@ useEffect(() => {
                   <TableCell>Status</TableCell>
                   <TableCell>Priority</TableCell>
                   <TableCell>Created</TableCell>
+                  <TableCell>Assigned</TableCell>
                   <TableCell>Description</TableCell>
                 </TableRow>
               </TableHead>
@@ -453,12 +620,11 @@ useEffect(() => {
                     <TableCell>{ticket.Status}</TableCell>
                     <TableCell>{ticket.Priority}</TableCell>
                     <TableCell>
-                      {ticket.Created
-                        ? !isNaN(new Date(ticket.Created).getTime())
-                          ? format(new Date(ticket.Created), 'MMM dd, yyyy')
-                          : 'Invalid Date'
+                      {ticket.Created && !isNaN(new Date(ticket.Created).getTime())
+                        ? format(new Date(ticket.Created), 'MMM dd, yyyy')
                         : 'N/A'}
                     </TableCell>
+                    <TableCell>{ticket.Assigned || 'Unassigned'}</TableCell>
                     <TableCell sx={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {ticket.Description}
                     </TableCell>

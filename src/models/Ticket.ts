@@ -20,6 +20,9 @@ const TicketSchema: Schema = new Schema({
   Priority: { type: String, required: true },
   Created: { type: Date, required: true },
   SnapshotDate: { type: Date, required: true },
+  Assigned: { type: String },
+  Organization: { type: String },
+  Description: { type: String },
 }, { strict: false }); // strict: false allows fields not in schema
 
 // Export the model, creating it if it doesn't already exist

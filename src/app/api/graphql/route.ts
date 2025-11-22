@@ -13,6 +13,8 @@ const typeDefs = `#graphql
     Priority: String
     Created: String
     Description: String
+    Assigned: String
+    Organization: String
     SnapshotDate: String
   }
 
@@ -26,8 +28,14 @@ const resolvers = {
     tickets: async (_: any, args: { status?: string[], priority?: string[] }): Promise<ITicket[]> => {
       await dbConnect();
       const filter: any = {};
-      if (args.status?.length) filter.Status = { $in: args.status };
-      if (args.priority?.length) filter.Priority = { $in: args.priority };
+      
+      // Only add filters if they exist and have values
+      if (args.status && args.status.length > 0) {
+        filter.Status = { $in: args.status };
+      }
+      if (args.priority && args.priority.length > 0) {
+        filter.Priority = { $in: args.priority };
+      }
 
       const tickets = await Ticket.aggregate([
         { $sort: { SnapshotDate: -1 } },
@@ -46,7 +54,6 @@ const resolvers = {
 const server = new ApolloServer({
   typeDefs,
   resolvers,
-  // This plugin enables the Apollo Sandbox for local development.
   plugins: [ApolloServerPluginLandingPageLocalDefault()],
 });
 
