@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { gql, useQuery } from '@apollo/client';
 import {
   Box,
@@ -24,6 +24,7 @@ import {
   SelectChangeEvent,
   CircularProgress
 } from '@mui/material';
+import { format } from 'date-fns';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -31,6 +32,7 @@ import dynamic from 'next/dynamic';
 
 // Dynamic import for Plotly to avoid SSR issues
 const Plot = dynamic(() => import('react-plotly.js'), { ssr: false });
+const WordCloud = dynamic(() => import('react-wordcloud'), { ssr: false });
 
 const GET_TICKETS = gql`
   query GetTickets($status: [String], $priority: [String]) {
@@ -55,8 +57,40 @@ const PRIORITY_BUTTONS = [
   "P2: Urgent. Workaround available.", "P3: Normal."
 ];
 
+const stopWords = new Set([
+  "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", 
+  "any", "are", "aren't", "as", "at", "be", "because", "been", "before", "being", 
+  "below", "between", "both", "but", "by", "can't", "cannot", "could", "couldn't", 
+  "did", "didn't", "do", "does", "doesn't", "doing", "don't", "down", "during", 
+  "each", "few", "for", "from", "further", "had", "hadn't", "has", "hasn't", 
+  "have", "haven't", "having", "he", "he'd", "he'll", "he's", "her", "here", 
+  "here's", "hers", "herself", "him", "himself", "his", "how", "how's", "i", 
+  "i'd", "i'll", "i'm", "i've", "if", "in", "into", "is", "isn't", "it", "it's", 
+  "its", "itself", "let's", "me", "more", "most", "mustn't", "my", "myself", 
+  "no", "nor", "not", "of", "off", "on", "once", "only", "or", "other", "ought", 
+  "our", "ours", "ourselves", "out", "over", "own", "same", "shan't", "she", 
+  "she'd", "she'll", "she's", "should", "shouldn't", "so", "some", "such", 
+  "than", "that", "that's", "the", "their", "theirs", "them", "themselves", 
+  "then", "there", "there's", "these", "they", "they'd", "they'll", "they're", 
+  "they've", "this", "those", "through", "to", "too", "under", "until", "up", 
+  "very", "was", "wasn't", "we", "we'd", "we'll", "we're", "we've", "were", 
+  "weren't", "what", "what's", "when", "when's", "where", "where's", "which", 
+  "while", "who", "who's", "whom", "why", "why's", "with", "won't", "would", 
+  "wouldn't", "you", "you'd", "you'll", "you're", "you've", "your", "yours", 
+  "yourself", "yourselves", "ticket", "description", "issue", "error", "please", "see"
+]);
+
 type ViewMode = 'pie' | 'line' | 'wordcloud' | 'workload' | 'performance' | null;
 
+const useIsClient = () => {
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  return isClient;
+};
 export default function Dashboard() {
   const [selectedStatus, setSelectedStatus] = useState<string[]>([]);
   const [selectedPriority, setSelectedPriority] = useState<string[]>([]);
@@ -64,6 +98,11 @@ export default function Dashboard() {
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(null);
   const [pieColumn, setPieColumn] = useState<string>('');
+  const [size, setSize] = useState<[number, number] | null>(null);
+  const wordCloudContainerRef = useRef<HTMLDivElement>(null);
+
+
+  const isClient = useIsClient();
 
   const { loading, error, data } = useQuery(GET_TICKETS, {
     variables: {
@@ -72,9 +111,34 @@ export default function Dashboard() {
     },
   });
 
-  console.log("Loading:", loading);
-  console.log("Error:", error);
-  console.log("Data:", data);
+  const tickets = data?.tickets || [];
+
+  // Filter by date if needed
+  const filteredTickets = tickets.filter((ticket: any) => {
+    const hasDateFilter = startDate || endDate;
+    if (!hasDateFilter) return true; // No date filter, show all
+
+    if (!ticket.Created) return false; // Date filter is on, but no date, so hide
+
+    const ticketDate = new Date(ticket.Created);
+    if (isNaN(ticketDate.getTime())) {
+      return false; // Date filter is on, but invalid date, so hide
+    }
+
+    if (startDate && ticketDate < startDate) return false;
+    if (endDate && ticketDate > endDate) return false;
+    
+    return true;
+  });
+
+useEffect(() => {
+    if (wordCloudContainerRef.current) {
+      const { clientWidth, clientHeight } = wordCloudContainerRef.current;
+      // Only set size if it's different to avoid re-renders
+      if (!size || size[0] !== clientWidth || size[1] !== clientHeight)
+      setSize([clientWidth, clientHeight]);
+    }
+  }, [wordCloudContainerRef.current, viewMode, filteredTickets, size]); // Re-check on data/view changes
 
   const handleStatusToggle = (status: string) => {
     setSelectedStatus(prev =>
@@ -96,24 +160,12 @@ export default function Dashboard() {
     setViewMode(prev => prev === mode ? null : mode);
   };
 
-  const tickets = data?.tickets || [];
-
-  // Filter by date if needed
-  const filteredTickets = tickets.filter((ticket: any) => {
-    if (!startDate && !endDate) return true;
-    const ticketDate = new Date(ticket.Created);
-    if (startDate && ticketDate < startDate) return false;
-    if (endDate && ticketDate > endDate) return false;
-    return true;
-  });
-
-  // Generate pie chart data
-  const generatePieData = (column: string) => {
-    if (!column || filteredTickets.length === 0) return null;
+  const pieData = useMemo(() => {
+    if (!pieColumn || filteredTickets.length === 0) return null;
     
     const counts: Record<string, number> = {};
     filteredTickets.forEach((ticket: any) => {
-      const value = ticket[column] || 'Unknown';
+      const value = ticket[pieColumn] || 'Unknown';
       counts[value] = (counts[value] || 0) + 1;
     });
 
@@ -125,15 +177,90 @@ export default function Dashboard() {
         hole: 0.3,
       }],
       layout: {
-        title: `${column} Distribution`,
+        title: `${pieColumn} Distribution`,
         paper_bgcolor: '#1e1e1e',
         plot_bgcolor: '#1e1e1e',
         font: { color: '#ffffff' },
       },
     };
-  };
+  }, [pieColumn, filteredTickets]);
 
-  const pieData = pieColumn ? generatePieData(pieColumn) : null;
+  const lineData = useMemo(() => {
+    if (filteredTickets.length === 0) return null;
+
+    const counts: Record<string, number> = {};
+    filteredTickets.forEach((ticket: any) => {
+      // 1. Check if ticket.Created actually exists
+      if (!ticket.Created) return;
+
+      const dateObj = new Date(ticket.Created);
+
+      // 2. Check if the date object is valid
+      if (isNaN(dateObj.getTime())) {
+        console.warn("Found a ticket with a bad date:", ticket);
+        return; // Skip this ticket
+      }
+
+      // 3. Safe to format now
+      const date = format(dateObj, 'MMM dd, yyyy');
+      
+      counts[date] = (counts[date] || 0) + 1;
+    });
+
+    const sortedDates = Object.keys(counts).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    const trace = {
+      type: 'scatter' as const,
+      mode: 'lines+markers' as const,
+      x: sortedDates,
+      y: sortedDates.map(date => counts[date]),
+    };
+
+    return {
+      data: [trace],
+      layout: {
+        title: 'Ticket Creation Trends',
+        paper_bgcolor: '#1e1e1e',
+        plot_bgcolor: '#1e1e1e',
+        font: { color: '#ffffff' },
+        xaxis: {
+          title: 'Date',
+        },
+        yaxis: {
+          title: 'Number of Tickets',
+        },
+      },
+    };
+  }, [filteredTickets]);
+
+  const wordCloudData = useMemo(() => {
+    if (filteredTickets.length === 0) return [];
+
+    const wordCounts: Record<string, number> = {};
+    filteredTickets.forEach((ticket: any) => {
+      if (!ticket.Description) return;
+
+      const words = ticket.Description.toLowerCase().match(/\b(\w+)\b/g) || [];
+      words.forEach((word: string) => {
+        if (!stopWords.has(word) && word.length > 2) {
+          wordCounts[word] = (wordCounts[word] || 0) + 1;
+        }
+      });
+    });
+
+    const sortedWords = Object.entries(wordCounts)
+      .map(([text, value]) => ({ text, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 100); // Take top 100 words
+
+    // Make the top 5 words larger to make them stand out
+    return sortedWords.map((word, index) => {
+      if (index < 5) {
+        return { ...word, value: word.value * 5 }; // Inflate value for font size
+      }
+      return word;
+    });
+
+  }, [filteredTickets]);
 
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns}>
@@ -266,6 +393,46 @@ export default function Dashboard() {
           </Paper>
         )}
 
+        {viewMode === 'line' && lineData && (
+          <Paper sx={{ p: 2, bgcolor: '#2a2a2a' }}>
+            <Plot
+              data={lineData.data}
+              layout={lineData.layout}
+              style={{ width: '100%', height: '600px' }}
+              config={{ responsive: true }}
+            />
+          </Paper>
+        )}
+
+        {isClient && viewMode === 'wordcloud' && (
+            <Paper ref={wordCloudContainerRef} sx={{ p: 2, bgcolor: '#2a2a2a', height: '600px', width: '100%' }}>
+              <Typography variant="h6" gutterBottom align="center">
+                Most Frequent Words in Descriptions
+              </Typography>
+              {size ? (
+                  wordCloudData.length > 0 ? (
+                    <WordCloud
+                      words={wordCloudData}
+                      size={size}
+                      options={{
+                        fontFamily: 'impact',
+                        fontSizes: [15, 100],
+                        rotations: 2,
+                        rotationAngles: [0, 90],
+                        colors: ["#2196f3", "#f44336", "#4caf50", "#ff9800", "#9c27b0", "#00bcd4"],
+                        enableTooltip: true,
+                      }}
+                    />
+                  ) : (
+                    <Typography align="center">No description data available for the word cloud.</Typography>
+                  )
+                
+              ) : ( 
+                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}><CircularProgress /></Box>
+              )}
+            </Paper>
+          )}
+
         {/* Table Display */}
         <Paper sx={{ mt: 3, bgcolor: '#2a2a2a' }}>
           <TableContainer>
@@ -286,7 +453,11 @@ export default function Dashboard() {
                     <TableCell>{ticket.Status}</TableCell>
                     <TableCell>{ticket.Priority}</TableCell>
                     <TableCell>
-                      {ticket.Created ? new Date(ticket.Created).toLocaleDateString() : 'N/A'}
+                      {ticket.Created
+                        ? !isNaN(new Date(ticket.Created).getTime())
+                          ? format(new Date(ticket.Created), 'MMM dd, yyyy')
+                          : 'Invalid Date'
+                        : 'N/A'}
                     </TableCell>
                     <TableCell sx={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {ticket.Description}

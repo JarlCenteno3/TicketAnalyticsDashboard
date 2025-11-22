@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');
-const { parse } = require('csv-parse');
+const { parse: parseCsv } = require('csv-parse');
+const { parse: parseDate } = require('date-fns');
 
 
 // --- Configuration ---
@@ -28,16 +29,28 @@ const ticketSchema = new mongoose.Schema({
 
 const Ticket = mongoose.model('Ticket', ticketSchema, COLLECTION_NAME);
 
-function parseCustomDate(dateStr) {
-    if (!dateStr || typeof dateStr !== 'string' || dateStr.toLowerCase() === 'nan') return null;
-    const monthMap = { 'jan': 0, 'feb': 1, 'mar': 2, 'apr': 3, 'may': 4, 'jun': 5, 'jul': 6, 'aug': 7, 'sep': 8, 'oct': 9, 'nov': 10, 'dec': 11 };
-    const parts = dateStr.split('-');
-    if (parts.length !== 3) return null;
-    const day = parseInt(parts[0], 10);
-    const month = monthMap[parts[1].toLowerCase()];
-    const year = parseInt(parts[2], 10) + 2000;
-    if (isNaN(day) || month === undefined || isNaN(year)) return null;
-    return new Date(Date.UTC(year, month, day));
+function parseDateValue(dateStr) {
+    if (!dateStr || typeof dateStr !== 'string' || dateStr.toLowerCase() === 'nan') {
+        return null;
+    }
+
+    // Attempt to parse known formats first
+    const formats = ['dd-MMM-yy', 'yyyy-MM-dd', 'MM/dd/yy'];
+    for (const format of formats) {
+        const parsedDate = parseDate(dateStr, format, new Date());
+        if (!isNaN(parsedDate.getTime())) {
+            return parsedDate;
+        }
+    }
+
+    // Fallback for ISO 8601 or other formats recognized by new Date()
+    const fallbackDate = new Date(dateStr);
+    if (!isNaN(fallbackDate.getTime())) {
+        return fallbackDate;
+    }
+
+    throw new Error(`[!] Failed to parse date: "${dateStr}"`);
+    return null;
 }
 
 async function migrate() {
@@ -75,10 +88,10 @@ async function migrate() {
 
             console.log(`\nProcessing ${basename} with SnapshotDate: ${snapshotDate.toISOString()}`);
 
-            const parser = fs.createReadStream(file).pipe(parse({ columns: true, trim: true, skip_empty_lines: true }));
+            const parser = fs.createReadStream(file).pipe(parseCsv({ columns: true, trim: true, skip_empty_lines: true }));
             const documents = [];
             for await (const record of parser) {
-                documents.push({ ...record, Created: parseCustomDate(record.Created), SnapshotDate: snapshotDate });
+                documents.push({ ...record, Created: parseDateValue(record.Created), SnapshotDate: snapshotDate });
             }
             if (documents.length > 0) {
                 await Ticket.insertMany(documents);
