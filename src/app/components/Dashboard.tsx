@@ -30,7 +30,8 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import dynamic from 'next/dynamic';
 
 const Plot = dynamic(() => import('react-plotly.js'), { ssr: false });
-const WordCloud = dynamic(() => import('react-wordcloud'), { ssr: false });
+// react-wordcloud does not ship TypeScript types in this project; treat as `any`
+const WordCloud: any = dynamic(() => import('react-wordcloud'), { ssr: false });
 
 const GET_TICKETS = gql`
   query GetTickets($status: [String], $priority: [String]) {
@@ -119,6 +120,9 @@ export default function Dashboard() {
   const tickets = data?.tickets || [];
 
   const filteredTickets = tickets.filter((ticket: any) => {
+    // Support optional start/end date filters. Normalize start to
+    // beginning of day and end to end of day so the filter matches
+    // intuitively for users selecting dates.
     const hasDateFilter = startDate || endDate;
     if (!hasDateFilter) return true;
     if (!ticket.Created) return false;
@@ -126,9 +130,14 @@ export default function Dashboard() {
     const ticketDate = new Date(ticket.Created);
     if (isNaN(ticketDate.getTime())) return false;
 
-    if (startDate && ticketDate < startDate) return false;
-    if (endDate && ticketDate > endDate) return false;
-    
+    const start = startDate ? new Date(startDate) : null;
+    const end = endDate ? new Date(endDate) : null;
+    if (start) start.setHours(0, 0, 0, 0);
+    if (end) end.setHours(23, 59, 59, 999);
+
+    if (start && ticketDate < start) return false;
+    if (end && ticketDate > end) return false;
+
     return true;
   });
 
@@ -136,7 +145,10 @@ export default function Dashboard() {
     if (wordCloudContainerRef.current && viewMode === 'wordcloud') {
       const { clientWidth, clientHeight } = wordCloudContainerRef.current;
       if (clientWidth > 0 && clientHeight > 0) {
-        setSize([clientWidth, clientHeight - 80]);
+        // Prevent negative/too-small heights which can crash the wordcloud
+        // renderer. Use a sensible minimum height.
+        const height = Math.max(clientHeight - 80, 240);
+        setSize([clientWidth, height]);
       }
     }
   }, [viewMode]);
@@ -469,7 +481,7 @@ export default function Dashboard() {
           <Paper sx={{ p: 2, bgcolor: '#2a2a2a' }}>
             <Plot
               data={pieData.data}
-              layout={pieData.layout}
+              layout={pieData.layout as any}
               style={{ width: '100%', height: '600px' }}
               config={{ responsive: true }}
             />
@@ -480,7 +492,7 @@ export default function Dashboard() {
           <Paper sx={{ p: 2, bgcolor: '#2a2a2a' }}>
             <Plot
               data={lineData.data}
-              layout={lineData.layout}
+              layout={lineData.layout as any}
               style={{ width: '100%', height: '600px' }}
               config={{ responsive: true }}
             />
@@ -492,9 +504,10 @@ export default function Dashboard() {
             <Typography variant="h6" gutterBottom align="center">
               Most Frequent Words in Descriptions
             </Typography>
-            {wordCloudData.length > 0 ? (
-              <Box sx={{ width: '100%', height: 'calc(100% - 60px)' }}>
+            {wordCloudData.length > 0 && size[1] > 0 ? (
+              <Box sx={{ width: '100%', height: size[1] }}>
                 <WordCloud
+                  key={`${wordCloudData.length}-${size[0]}-${size[1]}`}
                   words={wordCloudData}
                   options={{
                     fontFamily: 'impact',
@@ -518,7 +531,7 @@ export default function Dashboard() {
           <Paper sx={{ p: 2, mb: 3, bgcolor: '#2a2a2a' }}>
             <Plot
               data={workloadData.chartData.data}
-              layout={workloadData.chartData.layout}
+              layout={workloadData.chartData.layout as any}
               style={{ width: '100%', height: '800px' }}
               config={{ responsive: true }}
             />
@@ -555,7 +568,7 @@ export default function Dashboard() {
             <Paper sx={{ p: 2, mb: 3, bgcolor: '#2a2a2a' }}>
               <Plot
                 data={performanceData.chartData.data}
-                layout={performanceData.chartData.layout}
+                layout={performanceData.chartData.layout as any}
                 style={{ width: '100%', height: '500px' }}
                 config={{ responsive: true }}
               />

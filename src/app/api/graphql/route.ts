@@ -46,7 +46,16 @@ const resolvers = {
       
       console.log(`[API] Found ${tickets.length} tickets from database.`);
 
-      return tickets;
+      // Ensure date fields are serialized to ISO strings so the client
+      // always receives a consistent, parseable format regardless of
+      // how the DB driver represents dates.
+      const serialized = tickets.map((t: any) => ({
+        ...t,
+        Created: t.Created ? (new Date(t.Created)).toISOString() : null,
+        SnapshotDate: t.SnapshotDate ? (new Date(t.SnapshotDate)).toISOString() : null,
+      }));
+
+      return serialized;
     },
   },
 };
