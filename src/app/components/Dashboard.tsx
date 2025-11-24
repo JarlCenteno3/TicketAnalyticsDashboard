@@ -284,6 +284,11 @@ export default function Dashboard() {
       sortedStatuses.map(status => agentWorkload[agent][status] || 0)
     );
 
+    const customColorscale = [
+      [0, muiTheme.palette.background.paper],
+      [1, muiTheme.palette.primary.main],
+    ];
+
     return {
       chartData: {
         data: [{
@@ -291,17 +296,17 @@ export default function Dashboard() {
           x: sortedStatuses,
           y: sortedAgents,
           z: z,
-          colorscale: 'Viridis',
+          colorscale: customColorscale,
         }],
         layout: {
           ...chartLayout,
           title: 'Agent Workload by Ticket Status',
-          xaxis: { title: 'Status' },
-          yaxis: { title: 'Agent' },
+          xaxis: { title: 'Status', tickangle: -45, automargin: true },
+          yaxis: { title: 'Agent', automargin: true },
         },
       }
     };
-  }, [filteredTickets, chartLayout]);
+  }, [filteredTickets, chartLayout, muiTheme]);
 
   const performanceData = useMemo(() => {
     if (filteredTickets.length === 0) return null;
@@ -358,7 +363,7 @@ export default function Dashboard() {
         layout: {
           ...chartLayout,
           title: 'Tickets by Status',
-          xaxis: { title: 'Status', tickangle: -45 },
+          xaxis: { title: 'Status', tickangle: -45, automargin: true },
           yaxis: { title: 'Count' },
         },
       }
@@ -555,7 +560,7 @@ export default function Dashboard() {
                   height={size[1]}
                   font="impact"
                   fontSize={(word) => Math.sqrt(word.value) * 12}
-                  fill={muiTheme.palette.text.primary}
+                  fill={(d, i) => (i < 5 ? muiTheme.palette.primary.main : muiTheme.palette.text.primary)}
                   rotate={0}
                   padding={5}
                   onWordClick={() => {}}
@@ -583,7 +588,7 @@ export default function Dashboard() {
         {viewMode === 'workload' && workloadData && (
           <Paper sx={{ p: 2, mb: 3 }}>
             <Plot
-              data={workloadData.chartData.data}
+              data={workloadData.chartData.data as any}
               layout={workloadData.chartData.layout as any}
               style={{ width: '100%', height: '800px' }}
               config={{ responsive: true }}
