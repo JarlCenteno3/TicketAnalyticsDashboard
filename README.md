@@ -63,16 +63,3 @@ Open [http://localhost:3000](http://localhost:3000) in your browser to view the 
 *   `ticketCorpus/`: Sample CSV ticket data.
 *   `migration-script.js`: Script for data migration.
 *   `package.json`: Project dependencies and scripts.
-
-## Learn More
-
-To learn more about Next.js, see the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs)
-- [Learn Next.js](https://nextjs.org/learn)
-
-## Deployment
-
-This application can be deployed on the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme).
-
-Refer to the [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more information.
