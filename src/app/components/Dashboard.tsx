@@ -410,7 +410,7 @@ export default function Dashboard() {
               onClick={() => setTheme(resolvedTheme === 'light' ? 'dark' : 'light')}
               sx={{ color: 'white' }}
             >
-              {resolvedTheme === 'light' ? <Brightness4Icon /> : <Brightness7Icon />}
+              {isClient ? (resolvedTheme === 'light' ? <Brightness4Icon /> : <Brightness7Icon />) : null}
             </IconButton>
           </Box>
         </Container>
