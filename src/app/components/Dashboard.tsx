@@ -625,7 +625,7 @@ export default function Dashboard() {
 
             <Paper sx={{ p: 2, mb: 3 }}>
               <Plot
-                data={performanceData.chartData.data}
+                data={performanceData.chartData.data as any}
                 layout={performanceData.chartData.layout as any}
                 style={{ width: '100%', height: '500px' }}
                 config={{ responsive: true }}
