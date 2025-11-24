@@ -7,6 +7,7 @@ This project is a web application for visualizing ticket data. It's built with N
 *   **Dashboard:** Visualizes ticket trends, priorities, and statuses.
 *   **Data Migration:** Includes a script to migrate data from CSV files into the database.
 *   **Database:** Uses MongoDB to store ticket data.
+*   **Sorting:** The main ticket table can be sorted by the "Created" date by clicking on the column header.
 
 ## Prerequisites
 
