@@ -31,6 +31,8 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { useTheme as useMuiTheme } from '@mui/material/styles';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import { useTheme } from 'next-themes';
 import dynamic from 'next/dynamic';
 
@@ -38,8 +40,8 @@ const Plot = dynamic(() => import('react-plotly.js'), { ssr: false });
 const WordCloud = dynamic(() => import('react-d3-cloud'), { ssr: false });
 
 const GET_TICKETS = gql`
-  query GetTickets($status: [String], $priority: [String]) {
-    tickets(status: $status, priority: $priority) {
+  query GetTickets($status: [String], $priority: [String], $sortBy: String, $sortOrder: String) {
+    tickets(status: $status, priority: $priority, sortBy: $sortBy, sortOrder: $sortOrder) {
       _id
       Ticket
       Status
@@ -113,6 +115,7 @@ export default function Dashboard() {
   const [viewMode, setViewMode] = useState<ViewMode>(null);
   const [pieColumn, setPieColumn] = useState<string>('');
   const [size, setSize] = useState<[number, number]>([800, 600]);
+  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' }>({ key: 'Created', direction: 'desc' });
   const wordCloudContainerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
 
@@ -122,6 +125,8 @@ export default function Dashboard() {
     variables: {
       status: selectedStatus.length > 0 ? selectedStatus : undefined,
       priority: selectedPriority.length > 0 ? selectedPriority : undefined,
+      sortBy: sortConfig.key,
+      sortOrder: sortConfig.direction,
     },
   });
 
@@ -155,6 +160,15 @@ export default function Dashboard() {
       }
     }
   }, [viewMode]);
+
+  const handleSort = (key: string) => {
+    setSortConfig(prev => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'desc' };
+    });
+  };
 
   const handleStatusToggle = (status: string) => {
     setSelectedStatus(prev =>
@@ -683,7 +697,14 @@ export default function Dashboard() {
                   <TableCell>Ticket</TableCell>
                   <TableCell>Status</TableCell>
                   <TableCell>Priority</TableCell>
-                  <TableCell>Created</TableCell>
+                  <TableCell onClick={() => handleSort('Created')} style={{ cursor: 'pointer' }}>
+                    Created
+                    {sortConfig.key === 'Created' && (
+                      sortConfig.direction === 'asc' 
+                        ? <ArrowUpwardIcon fontSize="inherit" style={{ verticalAlign: 'middle' }} /> 
+                        : <ArrowDownwardIcon fontSize="inherit" style={{ verticalAlign: 'middle' }} />
+                    )}
+                  </TableCell>
                   <TableCell>Assigned</TableCell>
                   <TableCell>Description</TableCell>
                 </TableRow>

@@ -19,13 +19,13 @@ const typeDefs = `#graphql
   }
 
   type Query {
-    tickets(status: [String], priority: [String]): [Ticket]
+    tickets(status: [String], priority: [String], sortBy: String, sortOrder: String): [Ticket]
   }
 `;
 
 const resolvers = {
   Query: {
-    tickets: async (_: any, args: { status?: string[], priority?: string[] }): Promise<ITicket[]> => {
+    tickets: async (_: any, args: { status?: string[], priority?: string[], sortBy?: string, sortOrder?: string }): Promise<ITicket[]> => {
       await dbConnect();
       const filter: any = {};
       
@@ -37,12 +37,23 @@ const resolvers = {
         filter.Priority = { $in: args.priority };
       }
 
-      const tickets = await Ticket.aggregate([
+      const sort: any = {};
+      if (args.sortBy && args.sortOrder) {
+        sort[args.sortBy] = args.sortOrder === 'asc' ? 1 : -1;
+      }
+
+      const aggregationPipeline: any[] = [
         { $sort: { SnapshotDate: -1 } },
         { $group: { _id: "$Ticket", latest: { $first: "$$ROOT" } } },
         { $replaceRoot: { newRoot: "$latest" } },
         { $match: filter }
-      ]);
+      ];
+
+      if (Object.keys(sort).length > 0) {
+        aggregationPipeline.push({ $sort: sort });
+      }
+      
+      const tickets = await Ticket.aggregate(aggregationPipeline);
       
       console.log(`[API] Found ${tickets.length} tickets from database.`);
 
