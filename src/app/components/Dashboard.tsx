@@ -21,17 +21,21 @@ import {
   TableHead,
   TableRow,
   SelectChangeEvent,
-  CircularProgress
+  CircularProgress,
+  IconButton,
 } from '@mui/material';
 import { format } from 'date-fns';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { useTheme as useMuiTheme } from '@mui/material/styles';
+import Brightness4Icon from '@mui/icons-material/Brightness4';
+import Brightness7Icon from '@mui/icons-material/Brightness7';
+import { useTheme } from 'next-themes';
 import dynamic from 'next/dynamic';
 
 const Plot = dynamic(() => import('react-plotly.js'), { ssr: false });
-// react-wordcloud does not ship TypeScript types in this project; treat as `any`
-const WordCloud: any = dynamic(() => import('react-wordcloud'), { ssr: false });
+const WordCloud = dynamic(() => import('react-d3-cloud'), { ssr: false });
 
 const GET_TICKETS = gql`
   query GetTickets($status: [String], $priority: [String]) {
@@ -59,11 +63,6 @@ const PRIORITY_BUTTONS = [
   "P2: Urgent. Workaround available.", "P3: Normal."
 ];
 
-// Key fixes for word frequency:
-// 1. Added common words from your data to stopWords
-// 2. Improved regex pattern
-// 3. Better word cloud configuration
-
 const stopWords = new Set([
   "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", 
   "any", "are", "aren't", "as", "at", "be", "because", "been", "before", "being", 
@@ -85,10 +84,15 @@ const stopWords = new Set([
   "while", "who", "who's", "whom", "why", "why's", "with", "won't", "would", 
   "wouldn't", "you", "you'd", "you'll", "you're", "you've", "your", "yours", 
   "yourself", "yourselves", "ticket", "description", "issue", "error", "please", 
-  "see", "login", "failure", "timeout", "observed"  // FIX: Added common words from your data
+  "see", "login", "failure", "timeout", "observed"
 ]);
 
 type ViewMode = 'pie' | 'line' | 'wordcloud' | 'workload' | 'performance' | null;
+
+interface Word {
+  text: string;
+  value: number;
+}
 
 const useIsClient = () => {
   const [isClient, setIsClient] = useState(false);
@@ -99,6 +103,9 @@ const useIsClient = () => {
 };
 
 export default function Dashboard() {
+  const { setTheme, resolvedTheme } = useTheme();
+  const muiTheme = useMuiTheme();
+
   const [selectedStatus, setSelectedStatus] = useState<string[]>([]);
   const [selectedPriority, setSelectedPriority] = useState<string[]>([]);
   const [startDate, setStartDate] = useState<Date | null>(null);
@@ -107,6 +114,7 @@ export default function Dashboard() {
   const [pieColumn, setPieColumn] = useState<string>('');
   const [size, setSize] = useState<[number, number]>([800, 600]);
   const wordCloudContainerRef = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
 
   const isClient = useIsClient();
 
@@ -120,9 +128,6 @@ export default function Dashboard() {
   const tickets = data?.tickets || [];
 
   const filteredTickets = tickets.filter((ticket: any) => {
-    // Support optional start/end date filters. Normalize start to
-    // beginning of day and end to end of day so the filter matches
-    // intuitively for users selecting dates.
     const hasDateFilter = startDate || endDate;
     if (!hasDateFilter) return true;
     if (!ticket.Created) return false;
@@ -145,8 +150,6 @@ export default function Dashboard() {
     if (wordCloudContainerRef.current && viewMode === 'wordcloud') {
       const { clientWidth, clientHeight } = wordCloudContainerRef.current;
       if (clientWidth > 0 && clientHeight > 0) {
-        // Prevent negative/too-small heights which can crash the wordcloud
-        // renderer. Use a sensible minimum height.
         const height = Math.max(clientHeight - 80, 240);
         setSize([clientWidth, height]);
       }
@@ -169,6 +172,12 @@ export default function Dashboard() {
     setViewMode(prev => prev === mode ? null : mode);
   };
 
+  const chartLayout = {
+    paper_bgcolor: muiTheme.palette.background.paper,
+    plot_bgcolor: muiTheme.palette.background.paper,
+    font: { color: muiTheme.palette.text.primary },
+  };
+
   const pieData = useMemo(() => {
     if (!pieColumn || filteredTickets.length === 0) return null;
     
@@ -186,13 +195,11 @@ export default function Dashboard() {
         hole: 0.3,
       }],
       layout: {
+        ...chartLayout,
         title: `${pieColumn} Distribution`,
-        paper_bgcolor: '#1e1e1e',
-        plot_bgcolor: '#1e1e1e',
-        font: { color: '#ffffff' },
       },
     };
-  }, [pieColumn, filteredTickets]);
+  }, [pieColumn, filteredTickets, chartLayout]);
 
   const lineData = useMemo(() => {
     if (filteredTickets.length === 0) return null;
@@ -218,34 +225,33 @@ export default function Dashboard() {
         y: sortedDates.map(date => counts[date]),
       }],
       layout: {
+        ...chartLayout,
         title: 'Ticket Creation Trends',
-        paper_bgcolor: '#1e1e1e',
-        plot_bgcolor: '#1e1e1e',
-        font: { color: '#ffffff' },
         xaxis: { title: 'Date' },
         yaxis: { title: 'Number of Tickets' },
       },
     };
-  }, [filteredTickets]);
+  }, [filteredTickets, chartLayout]);
 
-  const wordCloudData = useMemo(() => {
+  const wordCloudData: Word[] = useMemo(() => {
     if (filteredTickets.length === 0) return [];
 
     const wordCounts: Record<string, number> = {};
     filteredTickets.forEach((ticket: any) => {
-      if (!ticket.Description) return;
-      const words = ticket.Description.toLowerCase().match(/\b[a-z]{3,}\b/g) || [];
-      words.forEach((word: string) => {
-        if (!stopWords.has(word)) {
-          wordCounts[word] = (wordCounts[word] || 0) + 1;
-        }
-      });
+      if (typeof ticket.Description === 'string') {
+        const words = ticket.Description.toLowerCase().match(/\b[a-z]{3,}\b/g) || [];
+        words.forEach((word: string) => {
+          if (!stopWords.has(word)) {
+            wordCounts[word] = (wordCounts[word] || 0) + 1;
+          }
+        });
+      }
     });
 
     return Object.entries(wordCounts)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 100)
-      .map(([text, value]) => ({ text, value }));
+      .map(([text, value]): Word => ({ text, value }));
   }, [filteredTickets]);
 
   const workloadData = useMemo(() => {
@@ -288,16 +294,14 @@ export default function Dashboard() {
           colorscale: 'Viridis',
         }],
         layout: {
+          ...chartLayout,
           title: 'Agent Workload by Ticket Status',
-          paper_bgcolor: '#1e1e1e',
-          plot_bgcolor: '#1e1e1e',
-          font: { color: '#ffffff' },
           xaxis: { title: 'Status' },
           yaxis: { title: 'Agent' },
         },
       }
     };
-  }, [filteredTickets]);
+  }, [filteredTickets, chartLayout]);
 
   const performanceData = useMemo(() => {
     if (filteredTickets.length === 0) return null;
@@ -346,31 +350,70 @@ export default function Dashboard() {
           marker: {
             color: Object.keys(statusCounts).map(status => 
               status === 'COMPLETED' ? '#4caf50' : 
-              status === 'IN PROGRESS' ? '#2196f3' : 
+              status === 'IN PROGRESS' ? '#1976d2' : 
               status === 'CREATED' ? '#ff9800' : '#9e9e9e'
             )
           },
         }],
         layout: {
+          ...chartLayout,
           title: 'Tickets by Status',
-          paper_bgcolor: '#1e1e1e',
-          plot_bgcolor: '#1e1e1e',
-          font: { color: '#ffffff' },
           xaxis: { title: 'Status', tickangle: -45 },
           yaxis: { title: 'Count' },
         },
       }
     };
-  }, [filteredTickets]);
+  }, [filteredTickets, chartLayout]);
 
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns}>
-      <Container maxWidth="xl" sx={{ py: 4 }}>
-        <Typography variant="h3" component="h1" gutterBottom>
-          Ticket Analytics Dashboard
-        </Typography>
+      <div
+        ref={tooltipRef}
+        style={{
+          position: 'absolute',
+          pointerEvents: 'none',
+          display: 'none',
+          background: muiTheme.palette.background.paper,
+          color: muiTheme.palette.text.primary,
+          padding: '5px 10px',
+          borderRadius: '3px',
+          zIndex: 1301,
+          border: `1px solid ${muiTheme.palette.divider}`
+        }}
+      />
+      <Box sx={{ 
+        bgcolor: '#1976d2', 
+        color: 'white',
+        py: 2,
+        px: 3,
+        mb: 4,
+        position: 'sticky',
+        top: 0,
+        zIndex: 1100
+      }}>
+        <Container maxWidth="xl">
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+              <Typography variant="h5" component="div" sx={{ fontWeight: 600, letterSpacing: 0.5 }}>
+                Dashlabs.ai
+              </Typography>
+              <Typography variant="body1" sx={{ color: 'rgba(255, 255, 255, 0.95)' }}>
+                Ticket Analytics Dashboard
+              </Typography>
+            </Box>
+            <IconButton 
+              onClick={() => setTheme(resolvedTheme === 'light' ? 'dark' : 'light')}
+              sx={{ color: 'white' }}
+            >
+              {resolvedTheme === 'light' ? <Brightness4Icon /> : <Brightness7Icon />}
+            </IconButton>
+          </Box>
+        </Container>
+      </Box>
 
-        <Paper sx={{ p: 3, mb: 3, bgcolor: '#2a2a2a' }}>
+      <Container maxWidth="xl" sx={{ py: 2 }}>
+
+        <Paper sx={{ p: 3, mb: 3 }}>
           <Grid container spacing={3}>
             <Grid item xs={12} md={6}>
               <Typography variant="h6" gutterBottom>Status</Typography>
@@ -423,7 +466,7 @@ export default function Dashboard() {
           </Grid>
         </Paper>
 
-        <Box sx={{ mb: 3 }}>
+        <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center' }}>
           <ButtonGroup variant="contained">
             <Button
               color={viewMode === 'pie' ? 'primary' : 'inherit'}
@@ -459,7 +502,7 @@ export default function Dashboard() {
         </Box>
 
         {viewMode === 'pie' && (
-          <Paper sx={{ p: 2, mb: 3, bgcolor: '#2a2a2a' }}>
+          <Paper sx={{ p: 2, mb: 3 }}>
             <FormControl fullWidth>
               <InputLabel>Select Column</InputLabel>
               <Select
@@ -478,7 +521,7 @@ export default function Dashboard() {
         {error && <Typography color="error">Error: {error.message}</Typography>}
         
         {viewMode === 'pie' && pieData && (
-          <Paper sx={{ p: 2, bgcolor: '#2a2a2a' }}>
+          <Paper sx={{ p: 2 }}>
             <Plot
               data={pieData.data}
               layout={pieData.layout as any}
@@ -489,7 +532,7 @@ export default function Dashboard() {
         )}
 
         {viewMode === 'line' && lineData && (
-          <Paper sx={{ p: 2, bgcolor: '#2a2a2a' }}>
+          <Paper sx={{ p: 2 }}>
             <Plot
               data={lineData.data}
               layout={lineData.layout as any}
@@ -500,35 +543,45 @@ export default function Dashboard() {
         )}
 
         {isClient && viewMode === 'wordcloud' && (
-          <Paper ref={wordCloudContainerRef} sx={{ p: 2, bgcolor: '#2a2a2a', height: '600px', width: '100%' }}>
+          <Paper ref={wordCloudContainerRef} sx={{ p: 2, height: '600px', width: '100%' }}>
             <Typography variant="h6" gutterBottom align="center">
               Most Frequent Words in Descriptions
             </Typography>
-            {wordCloudData.length > 0 && size[1] > 0 ? (
-              <Box sx={{ width: '100%', height: size[1] }}>
+            {wordCloudData && wordCloudData.length > 0 ? (
+              <>
                 <WordCloud
-                  key={`${wordCloudData.length}-${size[0]}-${size[1]}`}
-                  words={wordCloudData}
-                  options={{
-                    fontFamily: 'impact',
-                    fontSizes: [20, 80],
-                    rotations: 2,
-                    rotationAngles: [0, 90],
-                    colors: ["#2196f3", "#f44336", "#4caf50", "#ff9800", "#9c27b0", "#00bcd4"],
-                    enableTooltip: true,
-                    deterministic: true,
-                    scale: 'sqrt',
+                  data={wordCloudData}
+                  width={size[0]}
+                  height={size[1]}
+                  font="impact"
+                  fontSize={(word) => Math.sqrt(word.value) * 12}
+                  fill={muiTheme.palette.text.primary}
+                  rotate={0}
+                  padding={5}
+                  onWordClick={() => {}}
+                  onWordMouseOver={(event, d) => {
+                    if (tooltipRef.current) {
+                      tooltipRef.current.style.display = 'block';
+                      tooltipRef.current.innerHTML = `${d.text}: ${d.value}`;
+                      tooltipRef.current.style.left = `${event.pageX + 10}px`;
+                      tooltipRef.current.style.top = `${event.pageY + 10}px`;
+                    }
+                  }}
+                  onWordMouseOut={() => {
+                    if (tooltipRef.current) {
+                      tooltipRef.current.style.display = 'none';
+                    }
                   }}
                 />
-              </Box>
+              </>
             ) : (
-              <Typography align="center">No description data available.</Typography>
+              <Typography align="center">Loading word cloud...</Typography>
             )}
           </Paper>
         )}
 
         {viewMode === 'workload' && workloadData && (
-          <Paper sx={{ p: 2, mb: 3, bgcolor: '#2a2a2a' }}>
+          <Paper sx={{ p: 2, mb: 3 }}>
             <Plot
               data={workloadData.chartData.data}
               layout={workloadData.chartData.layout as any}
@@ -542,13 +595,13 @@ export default function Dashboard() {
           <Box>
             <Grid container spacing={3} sx={{ mb: 3 }}>
               <Grid item xs={12} md={4}>
-                <Paper sx={{ p: 3, bgcolor: '#2a2a2a', textAlign: 'center' }}>
+                <Paper sx={{ p: 3, textAlign: 'center' }}>
                   <Typography variant="h4" color="primary">{performanceData.totalTickets}</Typography>
                   <Typography variant="body1">Total Tickets</Typography>
                 </Paper>
               </Grid>
               <Grid item xs={12} md={4}>
-                <Paper sx={{ p: 3, bgcolor: '#2a2a2a', textAlign: 'center' }}>
+                <Paper sx={{ p: 3, textAlign: 'center' }}>
                   <Typography variant="h4" color="success.main">
                     {performanceData.avgResolutionTime} days
                   </Typography>
@@ -556,7 +609,7 @@ export default function Dashboard() {
                 </Paper>
               </Grid>
               <Grid item xs={12} md={4}>
-                <Paper sx={{ p: 3, bgcolor: '#2a2a2a', textAlign: 'center' }}>
+                <Paper sx={{ p: 3, textAlign: 'center' }}>
                   <Typography variant="h4" color="warning.main">
                     {performanceData.completionRate}%
                   </Typography>
@@ -565,7 +618,7 @@ export default function Dashboard() {
               </Grid>
             </Grid>
 
-            <Paper sx={{ p: 2, mb: 3, bgcolor: '#2a2a2a' }}>
+            <Paper sx={{ p: 2, mb: 3 }}>
               <Plot
                 data={performanceData.chartData.data}
                 layout={performanceData.chartData.layout as any}
@@ -576,44 +629,48 @@ export default function Dashboard() {
 
             <Grid container spacing={3}>
               <Grid item xs={12} md={6}>
-                <Paper sx={{ p: 3, bgcolor: '#2a2a2a' }}>
+                <Paper sx={{ p: 3 }}>
                   <Typography variant="h6" gutterBottom>Tickets by Organization</Typography>
-                  <Table size="small">
-                    <TableBody>
-                      {Object.entries(performanceData.orgCounts)
-                        .sort((a, b) => b[1] - a[1])
-                        .map(([org, count]) => (
-                          <TableRow key={org}>
-                            <TableCell>{org}</TableCell>
-                            <TableCell align="right">{count}</TableCell>
-                          </TableRow>
-                        ))}
-                    </TableBody>
-                  </Table>
+                  <TableContainer>
+                    <Table size="small">
+                      <TableBody>
+                        {Object.entries(performanceData.orgCounts)
+                          .sort((a, b) => b[1] - a[1])
+                          .map(([org, count]) => (
+                            <TableRow key={org}>
+                              <TableCell>{org}</TableCell>
+                              <TableCell align="right">{count}</TableCell>
+                            </TableRow>
+                          ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
                 </Paper>
               </Grid>
               <Grid item xs={12} md={6}>
-                <Paper sx={{ p: 3, bgcolor: '#2a2a2a' }}>
+                <Paper sx={{ p: 3 }}>
                   <Typography variant="h6" gutterBottom>Tickets by Priority</Typography>
-                  <Table size="small">
-                    <TableBody>
-                      {Object.entries(performanceData.priorityCounts)
-                        .sort((a, b) => b[1] - a[1])
-                        .map(([priority, count]) => (
-                          <TableRow key={priority}>
-                            <TableCell>{priority}</TableCell>
-                            <TableCell align="right">{count}</TableCell>
-                          </TableRow>
-                        ))}
-                    </TableBody>
-                  </Table>
+                   <TableContainer>
+                    <Table size="small">
+                      <TableBody>
+                        {Object.entries(performanceData.priorityCounts)
+                          .sort((a, b) => b[1] - a[1])
+                          .map(([priority, count]) => (
+                            <TableRow key={priority}>
+                              <TableCell>{priority}</TableCell>
+                              <TableCell align="right">{count}</TableCell>
+                            </TableRow>
+                          ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
                 </Paper>
               </Grid>
             </Grid>
           </Box>
         )}
 
-        <Paper sx={{ mt: 3, bgcolor: '#2a2a2a' }}>
+        <Paper sx={{ mt: 3}}>
           <TableContainer>
             <Table>
               <TableHead>
