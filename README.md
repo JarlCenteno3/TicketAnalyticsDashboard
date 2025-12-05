@@ -1,6 +1,6 @@
 # Ticket Analytics Dashboard
 
-This project is a web application for visualizing ticket data. It's built with Next.js and uses MongoDB for the database.
+This project is a web application for visualizing ticket data. It provides a dashboard to analyze ticket trends, priorities, and statuses over time. The application is built with Next.js and uses MongoDB for the database.
 
 ## Features
 
@@ -8,6 +8,12 @@ This project is a web application for visualizing ticket data. It's built with N
 *   **Data Migration:** Includes a script to migrate data from CSV files into the database.
 *   **Database:** Uses MongoDB to store ticket data.
 *   **Sorting:** The main ticket table can be sorted by the "Created" date by clicking on the column header.
+  
+## Technologies Used
+
+*   **Frontend:** Next.js, React, Apollo Client, Plotly.js, Material-UI
+*   **Backend:** Next.js API Routes, Apollo Server, Mongoose
+*   **Database:** MongoDB
 
 ## Prerequisites
 
